@@ -672,11 +672,14 @@ function LaoShiScreen({ user, onBack, startTopic }) {
     setInput("");
     setSending(true);
     startTimer();
-    supabase.from("chat_messages").insert({ user_id: user.id, conversation_id: convId, sender: "user", text }); // fire and forget
+    supabase.from("chat_messages").insert({ user_id: user.id, conversation_id: convId, sender: "user", text })
+      .then(({ error }) => { if (error) console.error("Failed to save user message:", error.message); });
     if (isFirstUserMessage) {
-      supabase.from("conversations").update({ title: text.slice(0, 60), updated_at: new Date().toISOString() }).eq("id", convId);
+      supabase.from("conversations").update({ title: text.slice(0, 60), updated_at: new Date().toISOString() }).eq("id", convId)
+        .then(({ error }) => { if (error) console.error("Failed to update conversation title:", error.message); });
     } else {
-      supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+      supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId)
+        .then(({ error }) => { if (error) console.error("Failed to update conversation timestamp:", error.message); });
     }
     try {
       const res = await fetch("/api/laoshi", {
@@ -687,7 +690,8 @@ function LaoShiScreen({ user, onBack, startTopic }) {
       const data = await res.json();
       const replyText = (res.ok && data.reply) ? data.reply : ((data && data.error) || "Lao Shi is resting right now — try again shortly.");
       setMessages(m => [...m, { from: "laoshi", text: replyText }]);
-      supabase.from("chat_messages").insert({ user_id: user.id, conversation_id: convId, sender: "laoshi", text: replyText });
+      supabase.from("chat_messages").insert({ user_id: user.id, conversation_id: convId, sender: "laoshi", text: replyText })
+        .then(({ error }) => { if (error) console.error("Failed to save Lao Shi reply:", error.message); });
     } catch (e) {
       const errText = "Couldn't reach the classroom — check your connection.";
       setMessages(m => [...m, { from: "laoshi", text: errText }]);
