@@ -6,11 +6,36 @@
 <title>Ni Hao — Learn Chinese</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<style> body { margin:0; font-family: 'Baloo 2', 'Noto Sans SC', sans-serif; } </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  body { margin:0; font-family: 'Baloo 2', 'Noto Sans SC', sans-serif; }
+  @keyframes waveHand { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(20deg)} 75%{transform:rotate(-10deg)} }
+  @keyframes stampIn { 0%{opacity:0; transform:scale(2.2) rotate(-18deg)} 60%{opacity:1; transform:scale(0.9) rotate(-8deg)} 100%{opacity:1; transform:scale(1) rotate(-8deg)} }
+  @keyframes fadeUp { 0%{opacity:0; transform:translateY(14px)} 100%{opacity:1; transform:translateY(0)} }
+  @keyframes floatSlow { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-10px)} }
+  @keyframes burst { 0%{transform:scale(1)} 35%{transform:scale(1.5)} 100%{transform:scale(1)} }
+  @keyframes shimmerSweep { 0%{transform:translateX(-120%)} 100%{transform:translateX(220%)} }
+  .wave { display:inline-block; animation: waveHand 1.1s ease-in-out infinite; transform-origin: 70% 70%; }
+  .stamp-in { animation: stampIn 0.7s cubic-bezier(.34,1.56,.64,1) both; }
+  .fade-up { animation: fadeUp 0.5s ease both; }
+  .float-slow { animation: floatSlow 4.5s ease-in-out infinite; }
+  .like-burst { animation: burst 0.35s ease; }
+  .press-fx { transition: transform 0.12s ease; }
+  .press-fx:active { transform: scale(0.94); }
+  .shimmer-btn { position:relative; overflow:hidden; }
+  .shimmer-btn::after {
+    content:''; position:absolute; top:0; left:0; width:40%; height:100%;
+    background: linear-gradient(115deg, transparent, rgba(255,255,255,0.35), transparent);
+    animation: shimmerSweep 2.8s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wave,.stamp-in,.fade-up,.float-slow,.like-burst,.shimmer-btn::after { animation: none !important; }
+  }
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -18,47 +43,58 @@
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-const RED = "#B23A2E";
-const RED_DARK = "#8E2E24";
-const RED_LIGHT = "#F9E4E0";
-const RED_BORDER = "#F3D9D3";
-const TEXT = "#4A2620";
-const MUTED = "#B08078";
+// ---------------- DESIGN TOKENS ----------------
+const RED = "#C8102E";
+const RED_DEEP = "#7A0C1E";
+const GOLD = "#F2B705";
+const PAPER = "#FFF8F3";
+const INK = "#2B1A15";
+const MUTED = "#B5847A";
+const BORDER = "#F5DCD3";
 const WHITE = "#FFFFFF";
+const FONT_BRUSH = "'Ma Shan Zheng', cursive";
 
-// ---- simple localStorage-backed "database" (per-device for now) ----
-function dbGetAll() {
-  try { return JSON.parse(localStorage.getItem("__nihao_store__") || "{}"); }
-  catch (e) { return {}; }
+// ---------------- SUPABASE ----------------
+// TODO: replace these two with your own project's values
+// (Supabase dashboard → Project Settings → API)
+const SUPABASE_URL = "https://emiyerduyewfeklhycvx.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ztf2owLSRwgtYmUoARvBYQ_Gk0b0hRi";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Supabase Auth needs an email — users only ever type a username, so we
+// map it to a fake address under the hood. Requires "Confirm email" to be
+// turned OFF in Supabase → Authentication → Providers → Email.
+function usernameToEmail(username) { return `${username.toLowerCase()}@nihao.local`; }
+
+// ---------------- SEAL STAMP (signature visual element) ----------------
+function SealStamp({ size = 44, rotate = -8, char = "好", className = "" }) {
+  return (
+    <div className={className} style={{
+      width: size, height: size, background: `linear-gradient(155deg, ${RED} 0%, ${RED_DEEP} 100%)`,
+      borderRadius: size * 0.2, display: "flex", alignItems: "center", justifyContent: "center",
+      transform: `rotate(${rotate}deg)`, boxShadow: "0 4px 10px rgba(122,12,30,0.35)",
+      border: "2px solid rgba(255,255,255,0.3)", flexShrink: 0,
+    }}>
+      <span style={{ color: WHITE, fontFamily: FONT_BRUSH, fontSize: size * 0.56, lineHeight: 1 }}>{char}</span>
+    </div>
+  );
 }
-function dbSaveAll(data) { localStorage.setItem("__nihao_store__", JSON.stringify(data)); }
-function dbGet(key) { const all = dbGetAll(); return all[key]; }
-function dbSet(key, value) { const all = dbGetAll(); all[key] = value; dbSaveAll(all); }
-function dbDelete(key) { const all = dbGetAll(); delete all[key]; dbSaveAll(all); }
-function dbListPrefix(prefix) { const all = dbGetAll(); return Object.keys(all).filter(k => k.startsWith(prefix)); }
 
 function Screen({ children }) {
-  return <div className="min-h-screen w-full flex flex-col" style={{ background: WHITE, color: TEXT }}>{children}</div>;
+  return <div className="min-h-screen w-full flex flex-col" style={{ background: PAPER, color: INK }}>{children}</div>;
 }
 
 // ---------------- ENTRY ANIMATION ----------------
 function EntryAnimation({ onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 2600); return () => clearTimeout(t); }, [onDone]);
+  useEffect(() => { const t = setTimeout(onDone, 2400); return () => clearTimeout(t); }, [onDone]);
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center gap-4"
-      style={{ background: `linear-gradient(160deg, ${RED} 0%, ${RED_DARK} 100%)` }}>
-      <style>{`
-        @keyframes waveHand { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(20deg)} 75%{transform:rotate(-10deg)} }
-        @keyframes popIn { 0%{opacity:0; transform:scale(0.7)} 100%{opacity:1; transform:scale(1)} }
-        @keyframes fadeUp { 0%{opacity:0; transform:translateY(12px)} 100%{opacity:1; transform:translateY(0)} }
-        .wave { display:inline-block; animation: waveHand 1.1s ease-in-out infinite; transform-origin: 70% 70%; }
-        .pop { animation: popIn 0.6s cubic-bezier(.34,1.56,.64,1) both; }
-        .fade1 { animation: fadeUp 0.6s ease 0.3s both; }
-        .fade2 { animation: fadeUp 0.6s ease 0.55s both; }
-      `}</style>
-      <div className="pop text-7xl"><span className="wave">👋</span></div>
-      <div className="fade1 text-5xl font-bold text-white tracking-wide">你好</div>
-      <div className="fade2 text-2xl font-semibold text-white opacity-90">Ni Hao</div>
+    <div className="min-h-screen w-full flex flex-col items-center justify-center gap-5 relative overflow-hidden"
+      style={{ background: `linear-gradient(160deg, ${RED} 0%, ${RED_DEEP} 100%)` }}>
+      <div className="float-slow absolute text-4xl opacity-20" style={{ top: "18%", left: "12%" }}>云</div>
+      <div className="float-slow absolute text-4xl opacity-20" style={{ bottom: "20%", right: "14%", animationDelay: "1.2s" }}>福</div>
+      <div className="stamp-in"><SealStamp size={96} rotate={-8} /></div>
+      <div className="fade-up text-white text-4xl" style={{ fontFamily: FONT_BRUSH, animationDelay: "0.35s" }}>你好</div>
+      <div className="fade-up text-lg font-semibold text-white opacity-90 tracking-wide" style={{ animationDelay: "0.55s" }}>NI HAO</div>
     </div>
   );
 }
@@ -72,27 +108,30 @@ function AuthScreen({ onAuth }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setError("");
     const cleanUsername = username.trim();
     if (!cleanUsername || !password) { setError("Please fill in both fields."); return; }
     if (/\s/.test(cleanUsername)) { setError("Username can't contain spaces — try something like 'salami123'."); return; }
     if (cleanUsername.length < 3) { setError("Username must be at least 3 characters."); return; }
     setBusy(true);
-    try {
-      const key = `user:${cleanUsername.toLowerCase()}`;
-      const existingRaw = dbGet(key);
-      const existing = existingRaw ? JSON.parse(existingRaw) : null;
+    const email = usernameToEmail(cleanUsername);
 
+    try {
       if (mode === "signup") {
-        if (existing) { setError("That username is already taken."); setBusy(false); return; }
-        const profile = { username: cleanUsername, password, displayName: cleanUsername, avatar: null, createdAt: Date.now() };
-        dbSet(key, JSON.stringify(profile));
-        onAuth(profile);
+        const { data, error: signErr } = await supabase.auth.signUp({ email, password });
+        if (signErr) { setError(signErr.message.includes("already registered") ? "That username is already taken." : signErr.message); setBusy(false); return; }
+        const userId = data.user.id;
+        const profile = { id: userId, username: cleanUsername, display_name: cleanUsername, avatar_url: null };
+        const { error: profileErr } = await supabase.from("profiles").insert(profile);
+        if (profileErr) { setError(profileErr.message); setBusy(false); return; }
+        onAuth({ ...profile, displayName: profile.display_name, avatar: profile.avatar_url });
       } else {
-        if (!existing) { setError("No account found with that username."); setBusy(false); return; }
-        if (existing.password !== password) { setError("Incorrect password."); setBusy(false); return; }
-        onAuth(existing);
+        const { data, error: signErr } = await supabase.auth.signInWithPassword({ email, password });
+        if (signErr) { setError("Incorrect username or password."); setBusy(false); return; }
+        const { data: profileRow, error: profileErr } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
+        if (profileErr || !profileRow) { setError("Could not load your profile."); setBusy(false); return; }
+        onAuth({ ...profileRow, displayName: profileRow.display_name, avatar: profileRow.avatar_url });
       }
     } catch (e) {
       setError(`Something went wrong: ${e && e.message ? e.message : "please try again"}.`);
@@ -102,25 +141,26 @@ function AuthScreen({ onAuth }) {
 
   return (
     <Screen>
-      <div className="flex-1 flex flex-col justify-center px-8">
+      <div className="flex-1 flex flex-col justify-center px-8 relative">
         <div className="text-center mb-8">
-          <div className="text-4xl mb-2">你好</div>
+          <div className="flex justify-center mb-3"><SealStamp size={64} rotate={-6} /></div>
           <h1 className="text-2xl font-bold" style={{ color: RED }}>Ni Hao</h1>
           <p className="text-sm mt-1" style={{ color: MUTED }}>{mode === "login" ? "Welcome back — log in to continue" : "Create your free account"}</p>
         </div>
         <div className="space-y-3">
           <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username"
-            className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }} />
+            className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }} />
           <div className="relative">
             <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? "text" : "password"} placeholder="Password"
-              className="w-full px-4 py-3 pr-16 rounded-xl text-sm outline-none" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }} />
+              className="w-full px-4 py-3 pr-16 rounded-xl text-sm outline-none" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }} />
             <button type="button" onClick={() => setShowPassword(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold" style={{ color: RED }}>
               {showPassword ? "Hide" : "Show"}
             </button>
           </div>
           {error && <p className="text-xs" style={{ color: RED }}>{error}</p>}
-          <button onClick={handleSubmit} disabled={busy} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ background: RED, color: WHITE, opacity: busy ? 0.7 : 1 }}>
-            {mode === "login" ? "Log In" : "Sign Up"}
+          <button onClick={handleSubmit} disabled={busy} className="press-fx shimmer-btn w-full py-3 rounded-xl text-sm font-bold tracking-wide"
+            style={{ background: `linear-gradient(135deg, ${RED} 0%, ${RED_DEEP} 100%)`, color: WHITE, opacity: busy ? 0.7 : 1 }}>
+            {busy ? "Please wait…" : mode === "login" ? "Log In" : "Sign Up"}
           </button>
         </div>
         <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }} className="text-xs mt-5 text-center" style={{ color: MUTED }}>
@@ -131,61 +171,155 @@ function AuthScreen({ onAuth }) {
   );
 }
 
+// ---------------- HOME ----------------
+const RECOMMENDED_TOPICS = [
+  { title: "Greetings & Introductions", starter: "Teach me how to greet someone and introduce myself in Chinese" },
+  { title: "Numbers 1–10", starter: "Teach me numbers 1 to 10 in Chinese" },
+  { title: "Ordering Food", starter: "Teach me how to order food in a Chinese restaurant" },
+  { title: "Family Members", starter: "Teach me words for family members in Chinese" },
+  { title: "The Four Tones", starter: "Explain the four tones and how to practice them" },
+];
+
+function getGreetingWord() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function HomeScreen({ user, onEnterLaoShi, onStartTopic, onGoCommunity }) {
+  const [highlights, setHighlights] = useState([]);
+  const [loadingHighlights, setLoadingHighlights] = useState(true);
+  const recommended = RECOMMENDED_TOPICS[new Date().getDate() % RECOMMENDED_TOPICS.length];
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("posts").select("text, created_at, profiles(username, display_name)").order("created_at", { ascending: false }).limit(3);
+      setHighlights(data || []);
+      setLoadingHighlights(false);
+    })();
+  }, []);
+
+  return (
+    <div className="flex-1 overflow-y-auto pb-24">
+      <div className="mx-5 mt-4 p-5 rounded-2xl relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${RED} 0%, ${RED_DEEP} 100%)` }}>
+        <div className="float-slow absolute text-3xl opacity-20" style={{ top: "10%", right: "8%" }}>福</div>
+        <p className="text-white text-lg font-bold">{getGreetingWord()}, {user.displayName || user.username}! 👋</p>
+        <div className="flex items-center gap-1.5 mt-2">
+          <span className="text-xl">🔥</span>
+          <span className="text-white text-sm font-semibold">{user.streakCount || 0} day{(user.streakCount || 0) === 1 ? "" : "s"} streak</span>
+        </div>
+        <p className="text-white text-xs opacity-80 mt-1">{user.streakCount > 0 ? "Keep it going today!" : "Chat with Lao Shi today to start your streak."}</p>
+      </div>
+
+      <button onClick={onEnterLaoShi} className="press-fx shimmer-btn w-full flex items-center gap-3 mx-5 mt-3 mb-2 p-4 rounded-2xl text-left"
+        style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
+        <SealStamp size={44} rotate={-6} char="先" />
+        <div className="flex-1">
+          <div className="text-sm font-bold" style={{ color: INK }}>Continue with Lao Shi</div>
+          <div className="text-xs" style={{ color: MUTED }}>Pick up where you left off</div>
+        </div>
+        <span style={{ color: MUTED }} className="text-lg">›</span>
+      </button>
+
+      <div className="mx-5 mb-4">
+        <p className="text-xs font-bold mb-2" style={{ color: MUTED }}>RECOMMENDED FOR TODAY</p>
+        <button onClick={() => onStartTopic(recommended.starter)} className="press-fx w-full p-4 rounded-2xl text-left" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
+          <div className="text-sm font-bold" style={{ color: RED }}>{recommended.title}</div>
+          <div className="text-xs mt-0.5" style={{ color: MUTED }}>Tap to start this lesson with Lao Shi</div>
+        </button>
+      </div>
+
+      <div className="mx-5">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-bold" style={{ color: MUTED }}>COMMUNITY HIGHLIGHTS</p>
+          <button onClick={onGoCommunity} className="text-xs font-semibold" style={{ color: RED }}>See all</button>
+        </div>
+        {loadingHighlights && <p className="text-sm py-4" style={{ color: MUTED }}>Loading…</p>}
+        {!loadingHighlights && highlights.length === 0 && <p className="text-sm py-4" style={{ color: MUTED }}>No posts yet — be the first to share!</p>}
+        <div className="space-y-2">
+          {highlights.map((h, i) => (
+            <div key={i} className="fade-up p-3.5 rounded-2xl" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
+              <div className="text-xs font-bold mb-0.5" style={{ color: RED }}>@{(h.profiles && (h.profiles.display_name || h.profiles.username)) || "learner"}</div>
+              <p className="text-sm leading-relaxed">{h.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------- FEED ----------------
 function FeedScreen({ user, onEnterLaoShi }) {
   const [posts, setPosts] = useState([]);
   const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [burstId, setBurstId] = useState(null);
 
-  useEffect(() => {
-    const keys = dbListPrefix("post:");
-    const items = keys.map(k => { try { return JSON.parse(dbGet(k)); } catch (e) { return null; } }).filter(Boolean);
-    setPosts(items.sort((a, b) => b.createdAt - a.createdAt));
-  }, []);
-
-  function submitPost() {
-    const text = draft.trim();
-    if (!text) return;
-    const post = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author: user.displayName || user.username, text, likes: 0, likedByMe: false, createdAt: Date.now() };
-    setPosts(p => [post, ...p]);
-    setDraft("");
-    dbSet(`post:${post.id}`, JSON.stringify(post));
+  async function loadPosts() {
+    setLoading(true);
+    const { data: postRows } = await supabase.from("posts").select("id, text, likes_count, created_at, author_id, profiles(username, display_name)").order("created_at", { ascending: false }).limit(50);
+    const { data: myLikes } = await supabase.from("likes").select("post_id").eq("user_id", user.id);
+    const likedSet = new Set((myLikes || []).map(l => l.post_id));
+    setPosts((postRows || []).map(p => ({
+      id: p.id, text: p.text, likes: p.likes_count, createdAt: p.created_at,
+      author: (p.profiles && (p.profiles.display_name || p.profiles.username)) || "Ni Hao user",
+      likedByMe: likedSet.has(p.id),
+    })));
+    setLoading(false);
   }
 
-  function toggleLike(post) {
-    const updated = { ...post, likes: post.likedByMe ? post.likes - 1 : post.likes + 1, likedByMe: !post.likedByMe };
-    setPosts(list => list.map(p => p.id === post.id ? updated : p));
-    dbSet(`post:${post.id}`, JSON.stringify(updated));
+  useEffect(() => { loadPosts(); }, []);
+
+  async function submitPost() {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    const { error } = await supabase.from("posts").insert({ author_id: user.id, text });
+    if (!error) loadPosts();
+  }
+
+  async function toggleLike(post) {
+    setBurstId(post.id);
+    setTimeout(() => setBurstId(null), 350);
+    if (post.likedByMe) {
+      await supabase.from("likes").delete().eq("post_id", post.id).eq("user_id", user.id);
+      setPosts(list => list.map(p => p.id === post.id ? { ...p, likes: p.likes - 1, likedByMe: false } : p));
+    } else {
+      await supabase.from("likes").insert({ post_id: post.id, user_id: user.id });
+      setPosts(list => list.map(p => p.id === post.id ? { ...p, likes: p.likes + 1, likedByMe: true } : p));
+    }
   }
 
   return (
     <div className="flex-1 overflow-y-auto pb-24">
-      <button onClick={onEnterLaoShi} className="w-full flex items-center gap-3 mx-5 mt-4 mb-2 p-4 rounded-2xl text-left"
-        style={{ background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 100%)` }}>
-        <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.2)" }}>
-          <span className="text-xl">先</span>
-        </div>
+      <button onClick={onEnterLaoShi} className="press-fx shimmer-btn w-full flex items-center gap-3 mx-5 mt-4 mb-2 p-4 rounded-2xl text-left"
+        style={{ background: `linear-gradient(135deg, ${RED} 0%, ${RED_DEEP} 100%)` }}>
+        <SealStamp size={44} rotate={-6} char="先" />
         <div className="flex-1">
-          <div className="text-sm font-semibold text-white">Enter Lao Shi</div>
+          <div className="text-sm font-bold text-white">Enter Lao Shi</div>
           <div className="text-xs text-white opacity-80">Your AI Chinese teacher is ready</div>
         </div>
-        <span className="text-white">›</span>
+        <span className="text-white text-lg">›</span>
       </button>
 
-      <div className="mx-5 mt-2 mb-4 p-3.5 rounded-2xl" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }}>
+      <div className="mx-5 mt-2 mb-4 p-3.5 rounded-2xl" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
         <textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="What did you learn today?" rows={2}
-          className="w-full bg-transparent text-sm outline-none resize-none" style={{ color: TEXT }} />
+          className="w-full bg-transparent text-sm outline-none resize-none" style={{ color: INK }} />
         <div className="flex justify-end mt-1">
-          <button onClick={submitPost} className="px-4 py-1.5 rounded-full text-xs font-semibold" style={{ background: RED, color: WHITE }}>Post</button>
+          <button onClick={submitPost} className="press-fx px-4 py-1.5 rounded-full text-xs font-bold" style={{ background: RED, color: WHITE }}>Post</button>
         </div>
       </div>
 
       <div className="px-5 space-y-3">
-        {posts.length === 0 && <p className="text-sm text-center py-8" style={{ color: MUTED }}>No posts yet — be the first to share what you're learning!</p>}
-        {posts.map(post => (
-          <div key={post.id} className="p-4 rounded-2xl" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }}>
-            <div className="text-xs font-semibold mb-1" style={{ color: RED }}>@{post.author}</div>
+        {loading && <p className="text-sm text-center py-8" style={{ color: MUTED }}>Loading the feed…</p>}
+        {!loading && posts.length === 0 && <p className="text-sm text-center py-8" style={{ color: MUTED }}>No posts yet — be the first to share what you're learning!</p>}
+        {posts.map((post, i) => (
+          <div key={post.id} className="fade-up p-4 rounded-2xl" style={{ background: WHITE, border: `1.5px solid ${BORDER}`, animationDelay: `${Math.min(i, 8) * 0.05}s` }}>
+            <div className="text-xs font-bold mb-1" style={{ color: RED }}>@{post.author}</div>
             <p className="text-sm leading-relaxed mb-2">{post.text}</p>
-            <button onClick={() => toggleLike(post)} className="flex items-center gap-1 text-xs" style={{ color: post.likedByMe ? RED : MUTED }}>
+            <button onClick={() => toggleLike(post)} className={`flex items-center gap-1 text-xs press-fx ${burstId === post.id ? "like-burst" : ""}`} style={{ color: post.likedByMe ? RED : MUTED }}>
               {post.likedByMe ? "❤️" : "🤍"} {post.likes}
             </button>
           </div>
@@ -200,6 +334,17 @@ function SettingsScreen({ user, onUpdateUser, onLogout, onDeleteAccount }) {
   const [view, setView] = useState("main");
   const [displayName, setDisplayName] = useState(user.displayName || user.username);
   const [avatar, setAvatar] = useState(user.avatar || null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [postsCount, setPostsCount] = useState(null);
+
+  useEffect(() => {
+    if (view !== "profile") return;
+    (async () => {
+      const { count } = await supabase.from("posts").select("id", { count: "exact", head: true }).eq("author_id", user.id);
+      setPostsCount(count || 0);
+    })();
+  }, [view]);
 
   function pickAvatar(e) {
     const file = e.target.files && e.target.files[0];
@@ -209,31 +354,102 @@ function SettingsScreen({ user, onUpdateUser, onLogout, onDeleteAccount }) {
     reader.readAsDataURL(file);
   }
 
-  function saveProfile() {
-    onUpdateUser({ ...user, displayName: displayName.trim() || user.username, avatar });
-    setView("main");
+  async function saveProfile() {
+    setSaving(true);
+    const cleanName = displayName.trim() || user.username;
+    const { error } = await supabase.from("profiles").update({ display_name: cleanName, avatar_url: avatar }).eq("id", user.id);
+    setSaving(false);
+    if (!error) { onUpdateUser({ ...user, displayName: cleanName, avatar }); }
+  }
+
+  async function handleDelete() {
+    if (!confirm("Delete your account permanently? This can't be undone.")) return;
+    setDeleting(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    try {
+      const res = await fetch("/api/delete-account", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, accessToken: sessionData.session.access_token }),
+      });
+      const data = await res.json();
+      if (res.ok) { await supabase.auth.signOut(); onDeleteAccount(); }
+      else alert(data.error || "Could not delete account.");
+    } catch (e) { alert("Could not delete account — check your connection."); }
+    setDeleting(false);
   }
 
   if (view === "profile") {
+    const joined = user.created_at ? new Date(user.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
     return (
-      <div className="flex-1 overflow-y-auto px-5 py-4">
-        <button onClick={() => setView("main")} className="text-sm mb-4" style={{ color: RED }}>← Settings</button>
-        <h2 className="text-lg font-bold mb-4">Profile</h2>
-        <div className="flex flex-col items-center mb-5">
+      <div className="flex-1 overflow-y-auto pb-8">
+        <div className="flex items-center px-5 py-4">
+          <button onClick={() => setView("main")} className="text-sm" style={{ color: RED }}>← Settings</button>
+        </div>
+
+        <div className="relative mx-5 h-24 rounded-2xl overflow-hidden" style={{ background: `linear-gradient(135deg, ${RED} 0%, ${RED_DEEP} 100%)` }}>
+          <div className="absolute text-3xl opacity-20" style={{ top: "12%", right: "10%" }}>福</div>
+          <div className="absolute text-2xl opacity-15" style={{ bottom: "8%", left: "38%" }}>云</div>
+        </div>
+
+        <div className="mx-5 -mt-10 flex flex-col items-center">
           <label className="relative cursor-pointer">
-            <div className="w-24 h-24 rounded-full flex items-center justify-center overflow-hidden" style={{ background: RED_LIGHT, border: `2px solid ${RED_BORDER}` }}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden" style={{ background: WHITE, border: `3px solid ${WHITE}`, boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
               {avatar ? <img src={avatar} alt="avatar" className="w-full h-full object-cover" /> : <span className="text-3xl">🙂</span>}
             </div>
-            <div className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: RED }}>
-              <span className="text-white text-sm">📷</span>
-            </div>
+            <div className="absolute bottom-0 right-0"><SealStamp size={26} rotate={0} char="写" /></div>
             <input type="file" accept="image/*" onChange={pickAvatar} className="hidden" />
           </label>
+          <p className="text-base font-bold mt-2">{user.displayName || user.username}</p>
+          <p className="text-xs" style={{ color: MUTED }}>@{user.username}</p>
         </div>
-        <label className="text-xs font-semibold" style={{ color: MUTED }}>Display name</label>
-        <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-          className="w-full px-4 py-3 rounded-xl text-sm outline-none mt-1 mb-4" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }} />
-        <button onClick={saveProfile} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ background: RED, color: WHITE }}>Save Changes</button>
+
+        <div className="flex gap-2.5 mx-5 mt-4">
+          <div className="flex-1 p-3 rounded-2xl text-center" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
+            <div className="text-lg">🔥</div>
+            <div className="text-sm font-bold mt-0.5" style={{ color: INK }}>{user.streakCount || 0}</div>
+            <div className="text-[10px]" style={{ color: MUTED }}>Day streak</div>
+          </div>
+          <div className="flex-1 p-3 rounded-2xl text-center" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
+            <div className="text-lg">📝</div>
+            <div className="text-sm font-bold mt-0.5" style={{ color: INK }}>{postsCount === null ? "…" : postsCount}</div>
+            <div className="text-[10px]" style={{ color: MUTED }}>Posts</div>
+          </div>
+          <div className="flex-1 p-3 rounded-2xl text-center" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
+            <div className="text-lg">📅</div>
+            <div className="text-sm font-bold mt-0.5" style={{ color: INK }}>{joined}</div>
+            <div className="text-[10px]" style={{ color: MUTED }}>Joined</div>
+          </div>
+        </div>
+
+        <div className="mx-5 mt-5">
+          <p className="text-xs font-bold mb-2" style={{ color: MUTED }}>ACCOUNT</p>
+          <div className="rounded-2xl overflow-hidden" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
+            <div className="flex items-center gap-3 p-3.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <span>@</span>
+              <div className="flex-1">
+                <div className="text-[10px]" style={{ color: MUTED }}>Username</div>
+                <div className="text-sm font-semibold">@{user.username}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3.5">
+              <span>📅</span>
+              <div className="flex-1">
+                <div className="text-[10px]" style={{ color: MUTED }}>Joined</div>
+                <div className="text-sm font-semibold">{joined}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-5 mt-5">
+          <p className="text-xs font-bold mb-2" style={{ color: MUTED }}>EDIT PROFILE</p>
+          <label className="text-xs font-semibold" style={{ color: MUTED }}>Display name</label>
+          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl text-sm outline-none mt-1 mb-3" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }} />
+          <button onClick={saveProfile} disabled={saving} className="press-fx w-full py-3 rounded-xl text-sm font-bold" style={{ background: RED, color: WHITE, opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -243,7 +459,7 @@ function SettingsScreen({ user, onUpdateUser, onLogout, onDeleteAccount }) {
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <button onClick={() => setView("main")} className="text-sm mb-4" style={{ color: RED }}>← Settings</button>
         <div className="text-center mb-5">
-          <div className="text-3xl mb-1">你好</div>
+          <div className="flex justify-center mb-2"><SealStamp size={54} rotate={-5} /></div>
           <h2 className="text-lg font-bold">About Ni Hao</h2>
         </div>
         <p className="text-sm leading-relaxed mb-5">
@@ -252,19 +468,19 @@ function SettingsScreen({ user, onUpdateUser, onLogout, onDeleteAccount }) {
         </p>
         <div className="space-y-2">
           <a href="https://www.instagram.com/iamsalamitechhub?igsh=OWZseDNtczVzNnYx" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }}>
+            className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
             <span>📷</span>
             <div className="flex-1 text-sm font-medium">Instagram — @iamsalamitechhub</div>
             <span style={{ color: MUTED }}>›</span>
           </a>
-          <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }}>
+          <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
             <span>💬</span>
             <div className="flex-1">
               <div className="text-sm font-medium">WhatsApp</div>
               <div className="text-xs" style={{ color: MUTED }}>08112645916</div>
             </div>
           </div>
-          <div className="p-3.5 rounded-xl" style={{ background: RED_LIGHT, border: `1px solid ${RED_BORDER}` }}>
+          <div className="p-3.5 rounded-xl" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
             <div className="text-sm font-medium mb-1">💛 Support Ni Hao</div>
             <div className="text-xs" style={{ color: MUTED }}>PalmPay — 8112645916</div>
             <div className="text-xs" style={{ color: MUTED }}>Salami Olawale Akeem</div>
@@ -278,17 +494,17 @@ function SettingsScreen({ user, onUpdateUser, onLogout, onDeleteAccount }) {
     <div className="flex-1 overflow-y-auto px-5 py-4">
       <h2 className="text-lg font-bold mb-4">Settings</h2>
       <div className="space-y-2">
-        <button onClick={() => setView("profile")} className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: RED_LIGHT }}>
+        <button onClick={() => setView("profile")} className="press-fx w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
           <span>🙂</span><div className="flex-1 text-sm font-medium">Profile</div><span style={{ color: MUTED }}>›</span>
         </button>
-        <button onClick={() => setView("about")} className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: RED_LIGHT }}>
+        <button onClick={() => setView("about")} className="press-fx w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
           <span>✨</span><div className="flex-1 text-sm font-medium">About Ni Hao</div><span style={{ color: MUTED }}>›</span>
         </button>
-        <button onClick={onLogout} className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: RED_LIGHT }}>
+        <button onClick={onLogout} className="press-fx w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
           <span>🚪</span><div className="flex-1 text-sm font-medium">Log Out</div>
         </button>
-        <button onClick={onDeleteAccount} className="w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: "#FDEAEA" }}>
-          <span>🗑️</span><div className="flex-1 text-sm font-medium" style={{ color: "#C0392B" }}>Delete Account</div>
+        <button onClick={handleDelete} disabled={deleting} className="press-fx w-full flex items-center gap-3 p-3.5 rounded-xl text-left" style={{ background: "#FDEAEA", opacity: deleting ? 0.6 : 1 }}>
+          <span>🗑️</span><div className="flex-1 text-sm font-medium" style={{ color: "#C0392B" }}>{deleting ? "Deleting…" : "Delete Account"}</div>
         </button>
       </div>
     </div>
@@ -299,9 +515,29 @@ function SettingsScreen({ user, onUpdateUser, onLogout, onDeleteAccount }) {
 const QUICK_STARTERS = ["Teach me a greeting", "What are the 4 tones?", "Tell me about a festival", "How do I say thank you?"];
 const DAILY_CHAT_LIMIT_SECONDS = 60 * 60;
 
-function speakZh(text) {
-  try { const u = new SpeechSynthesisUtterance(text); u.lang = "zh-CN"; u.rate = 0.9; window.speechSynthesis.speak(u); } catch (e) {}
+let cachedZhVoice = null;
+function pickZhVoice() {
+  if (cachedZhVoice) return cachedZhVoice;
+  const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+  cachedZhVoice = voices.find(v => v.lang === "zh-CN") || voices.find(v => v.lang && v.lang.startsWith("zh")) || null;
+  return cachedZhVoice;
 }
+if (typeof window !== "undefined" && window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => { cachedZhVoice = null; pickZhVoice(); };
+}
+function speakZh(text, onStart, onEnd) {
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "zh-CN"; u.rate = 0.9;
+    const voice = pickZhVoice();
+    if (voice) u.voice = voice;
+    if (onStart) u.onstart = onStart;
+    if (onEnd) { u.onend = onEnd; u.onerror = onEnd; }
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function stopSpeaking() { try { window.speechSynthesis.cancel(); } catch (e) {} }
 function getSpeechRecognizer() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return null;
@@ -309,14 +545,15 @@ function getSpeechRecognizer() {
   return r;
 }
 
-function LaoShiScreen({ onBack }) {
-  const [messages, setMessages] = useState([
-    { from: "laoshi", text: "你好！I'm Lao Shi, your Chinese teacher. What's your name? I'll tell you how it sounds in Chinese! 😊" },
-  ]);
+function LaoShiScreen({ user, onBack, startTopic }) {
+  const [messages, setMessages] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const startTopicSentRef = useRef(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
+  const [speakingIndex, setSpeakingIndex] = useState(null);
   const [secondsUsedToday, setSecondsUsedToday] = useState(0);
   const scrollRef = useRef(null);
   const activeTimerRef = useRef(null);
@@ -327,11 +564,30 @@ function LaoShiScreen({ onBack }) {
 
   useEffect(() => {
     if (!getSpeechRecognizer()) setVoiceSupported(false);
-    const raw = dbGet("laoshi:usage");
-    if (raw) { try { const parsed = JSON.parse(raw); if (parsed.date === today) setSecondsUsedToday(parsed.seconds || 0); } catch (e) {} }
+    const stored = localStorage.getItem(`laoshi_usage_${today}_${user.id}`);
+    if (stored) setSecondsUsedToday(parseInt(stored, 10) || 0);
+    loadHistory();
+    return () => { stopSpeaking(); };
   }, []);
 
-  useEffect(() => { dbSet("laoshi:usage", JSON.stringify({ date: today, seconds: secondsUsedToday })); }, [secondsUsedToday]);
+  async function loadHistory() {
+    const { data } = await supabase.from("chat_messages").select("sender, text, created_at").eq("user_id", user.id).order("created_at", { ascending: true });
+    if (data && data.length) {
+      setMessages(data.map(r => ({ from: r.sender, text: r.text })));
+    } else {
+      const name = user.displayName || user.username;
+      const greeting = `你好 ${name}！I'm Lao Shi, your Chinese teacher. Ready to learn something new today? 😊`;
+      setMessages([{ from: "laoshi", text: greeting }]);
+      await supabase.from("chat_messages").insert({ user_id: user.id, sender: "laoshi", text: greeting });
+    }
+    setLoadingHistory(false);
+    if (startTopic && !startTopicSentRef.current) {
+      startTopicSentRef.current = true;
+      sendText(startTopic);
+    }
+  }
+
+  useEffect(() => { localStorage.setItem(`laoshi_usage_${today}_${user.id}`, String(secondsUsedToday)); }, [secondsUsedToday]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
 
   function startTimer() { if (activeTimerRef.current) return; activeTimerRef.current = setInterval(() => setSecondsUsedToday(s => Math.min(DAILY_CHAT_LIMIT_SECONDS, s + 1)), 1000); }
@@ -350,19 +606,32 @@ function LaoShiScreen({ onBack }) {
     r.start();
   }
 
+  function handleSpeakToggle(text, index) {
+    if (speakingIndex === index) { stopSpeaking(); setSpeakingIndex(null); return; }
+    speakZh(text, () => setSpeakingIndex(index), () => setSpeakingIndex(null));
+  }
+
   async function sendText(text) {
     if (!text.trim() || sending || limitReached) return;
+    const outgoingHistory = messages;
     setMessages(m => [...m, { from: "user", text }]);
     setInput("");
     setSending(true);
     startTimer();
+    supabase.from("chat_messages").insert({ user_id: user.id, sender: "user", text }); // fire and forget
     try {
-      const res = await fetch("/api/laoshi", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
+      const res = await fetch("/api/laoshi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: outgoingHistory, userName: user.displayName || user.username }),
+      });
       const data = await res.json();
-      if (res.ok && data.reply) setMessages(m => [...m, { from: "laoshi", text: data.reply }]);
-      else setMessages(m => [...m, { from: "laoshi", text: (data && data.error) || "Lao Shi is resting right now — try again shortly." }]);
+      const replyText = (res.ok && data.reply) ? data.reply : ((data && data.error) || "Lao Shi is resting right now — try again shortly.");
+      setMessages(m => [...m, { from: "laoshi", text: replyText }]);
+      supabase.from("chat_messages").insert({ user_id: user.id, sender: "laoshi", text: replyText });
     } catch (e) {
-      setMessages(m => [...m, { from: "laoshi", text: "Couldn't reach the classroom — check your connection." }]);
+      const errText = "Couldn't reach the classroom — check your connection.";
+      setMessages(m => [...m, { from: "laoshi", text: errText }]);
     } finally {
       setSending(false);
       stopTimer();
@@ -371,11 +640,9 @@ function LaoShiScreen({ onBack }) {
 
   return (
     <Screen>
-      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${RED_BORDER}` }}>
-        <button onClick={onBack} className="text-sm" style={{ color: RED }}>←</button>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 100%)` }}>
-          <span className="text-lg">先</span>
-        </div>
+      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: `1.5px solid ${BORDER}` }}>
+        <button onClick={() => { stopSpeaking(); onBack(); }} className="text-sm" style={{ color: RED }}>←</button>
+        <SealStamp size={40} rotate={-6} char="先" />
         <div className="flex-1">
           <div className="text-sm font-bold">Lao Shi</div>
           <div className="text-xs" style={{ color: MUTED }}>{limitReached ? "Resting for today" : `${Math.ceil(remaining / 60)} min left today`}</div>
@@ -383,44 +650,46 @@ function LaoShiScreen({ onBack }) {
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-        {messages.map((m, i) => (
-          <div key={i} className={`flex items-end gap-1.5 ${m.from === "user" ? "justify-end" : "justify-start"}`}>
+        {loadingHistory && <p className="text-sm text-center py-8" style={{ color: MUTED }}>Loading your lessons…</p>}
+        {!loadingHistory && messages.map((m, i) => (
+          <div key={i} className={`fade-up flex items-end gap-1.5 ${m.from === "user" ? "justify-end" : "justify-start"}`}>
             <div className="max-w-[78%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed"
-              style={{ background: m.from === "user" ? RED : RED_LIGHT, color: m.from === "user" ? WHITE : TEXT,
+              style={{ background: m.from === "user" ? RED : WHITE, color: m.from === "user" ? WHITE : INK,
+                border: m.from === "user" ? "none" : `1.5px solid ${BORDER}`,
                 borderBottomRightRadius: m.from === "user" ? 4 : 16, borderBottomLeftRadius: m.from === "user" ? 16 : 4 }}>
               {m.text}
             </div>
             {m.from === "laoshi" && (
-              <button onClick={() => speakZh(m.text)} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: RED_LIGHT }}>
-                <span style={{ fontSize: 11 }}>🔊</span>
+              <button onClick={() => handleSpeakToggle(m.text, i)} className="press-fx shrink-0 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: speakingIndex === i ? RED : PAPER, border: `1px solid ${BORDER}` }}>
+                <span style={{ fontSize: 11, color: speakingIndex === i ? WHITE : INK }}>{speakingIndex === i ? "⏹" : "🔊"}</span>
               </button>
             )}
           </div>
         ))}
-        {sending && <div className="flex justify-start"><div className="px-4 py-2.5 rounded-2xl text-sm" style={{ background: RED_LIGHT, color: MUTED }}>Lao Shi is thinking…</div></div>}
-        {messages.length === 1 && (
+        {sending && <div className="flex justify-start"><div className="px-4 py-2.5 rounded-2xl text-sm" style={{ background: PAPER, color: MUTED, border: `1.5px solid ${BORDER}` }}>Lao Shi is thinking…</div></div>}
+        {!loadingHistory && messages.length === 1 && (
           <div className="flex flex-wrap gap-2 pt-2">
             {QUICK_STARTERS.map(q => (
-              <button key={q} onClick={() => sendText(q)} className="px-3 py-1.5 rounded-full text-xs" style={{ background: RED_LIGHT, color: RED, border: `1px solid ${RED_BORDER}` }}>{q}</button>
+              <button key={q} onClick={() => sendText(q)} className="press-fx px-3 py-1.5 rounded-full text-xs font-medium" style={{ background: WHITE, color: RED, border: `1.5px solid ${BORDER}` }}>{q}</button>
             ))}
           </div>
         )}
       </div>
 
-      <div className="px-5 py-4" style={{ borderTop: `1px solid ${RED_BORDER}` }}>
+      <div className="px-5 py-4" style={{ borderTop: `1.5px solid ${BORDER}` }}>
         {limitReached ? (
           <p className="text-sm text-center" style={{ color: MUTED }}>Lao Shi is resting for today — come back tomorrow! 加油</p>
         ) : (
           <div className="flex gap-2">
             {voiceSupported && (
-              <button onClick={toggleListening} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: listening ? RED : RED_LIGHT }}>
-                <span style={{ fontSize: 16 }}>{listening ? "⏹" : "🎙"}</span>
+              <button onClick={toggleListening} className="press-fx w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: listening ? RED : PAPER, border: `1.5px solid ${BORDER}` }}>
+                <span style={{ fontSize: 16, color: listening ? WHITE : INK }}>{listening ? "⏹" : "🎙"}</span>
               </button>
             )}
             <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendText(input)}
               placeholder={listening ? "Listening..." : "Message Lao Shi..."} disabled={sending}
-              className="flex-1 px-4 py-2.5 rounded-full text-sm outline-none" style={{ background: RED_LIGHT, color: TEXT, border: `1px solid ${RED_BORDER}` }} />
-            <button onClick={() => sendText(input)} disabled={sending} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: RED, opacity: sending ? 0.6 : 1 }}>
+              className="flex-1 px-4 py-2.5 rounded-full text-sm outline-none" style={{ background: WHITE, color: INK, border: `1.5px solid ${BORDER}` }} />
+            <button onClick={() => sendText(input)} disabled={sending} className="press-fx w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: RED, opacity: sending ? 0.6 : 1 }}>
               <span className="text-white">➤</span>
             </button>
           </div>
@@ -431,52 +700,103 @@ function LaoShiScreen({ onBack }) {
 }
 
 // ---------------- APP ROOT ----------------
+// Updates the learner's daily streak. Call once per app session after login.
+// Logic: same day as last visit -> no change. Exactly one day later -> streak+1.
+// Any bigger gap (or first ever visit) -> streak resets to 1.
+async function computeAndSaveStreak(profileRow) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const last = profileRow.last_active_date;
+  let newStreak = 1;
+  if (last === todayStr) {
+    newStreak = profileRow.streak_count || 1;
+    return { ...profileRow, streak_count: newStreak }; // already counted today, skip write
+  } else if (last) {
+    const lastDate = new Date(last + "T00:00:00");
+    const diffDays = Math.round((new Date(todayStr + "T00:00:00") - lastDate) / 86400000);
+    newStreak = diffDays === 1 ? (profileRow.streak_count || 0) + 1 : 1;
+  }
+  await supabase.from("profiles").update({ streak_count: newStreak, last_active_date: todayStr }).eq("id", profileRow.id);
+  return { ...profileRow, streak_count: newStreak, last_active_date: todayStr };
+}
+
 function NiHaoApp() {
   const [stage, setStage] = useState("entry");
   const [user, setUser] = useState(null);
-  const [tab, setTab] = useState("feed");
+  const [tab, setTab] = useState("home");
   const [laoShiOpen, setLaoShiOpen] = useState(false);
+  const [laoShiStartTopic, setLaoShiStartTopic] = useState(null);
+  const [entryDone, setEntryDone] = useState(false);
 
-  function handleLogout() { setUser(null); setStage("auth"); }
-  function handleDeleteAccount() {
-    if (!confirm("Delete your account permanently? This can't be undone.")) return;
-    dbDelete(`user:${user.username.toLowerCase()}`);
-    setUser(null); setStage("auth");
+  // Try to resume an existing Supabase session once the entry animation finishes
+  useEffect(() => {
+    if (!entryDone) return;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data && data.session) {
+        const { data: profileRow } = await supabase.from("profiles").select("*").eq("id", data.session.user.id).single();
+        if (profileRow) {
+          const updatedRow = await computeAndSaveStreak(profileRow);
+          setUser({ ...updatedRow, displayName: updatedRow.display_name, avatar: updatedRow.avatar_url, streakCount: updatedRow.streak_count });
+          setStage("app");
+          return;
+        }
+      }
+      setStage("auth");
+    })();
+  }, [entryDone]);
+
+  async function handleLogout() { await supabase.auth.signOut(); setUser(null); setStage("auth"); }
+  function handleDeleteAccount() { setUser(null); setStage("auth"); }
+  function handleUpdateUser(updated) { setUser(updated); }
+  function openLaoShi(topic) { setLaoShiStartTopic(topic || null); setLaoShiOpen(true); }
+
+  if (stage === "entry") return <EntryAnimation onDone={() => setEntryDone(true)} />;
+  if (stage !== "app" || !user) {
+    return <AuthScreen onAuth={async (u) => {
+      const updatedRow = await computeAndSaveStreak(u);
+      setUser({ ...updatedRow, displayName: updatedRow.display_name, avatar: updatedRow.avatar_url, streakCount: updatedRow.streak_count });
+      setStage("app");
+    }} />;
   }
-  function handleUpdateUser(updated) { setUser(updated); dbSet(`user:${updated.username.toLowerCase()}`, JSON.stringify(updated)); }
-
-  if (stage === "entry") return <EntryAnimation onDone={() => setStage("auth")} />;
-  if (stage === "auth") return <AuthScreen onAuth={(u) => { setUser(u); setStage("app"); }} />;
-  if (laoShiOpen) return <LaoShiScreen onBack={() => setLaoShiOpen(false)} />;
+  if (laoShiOpen) return <LaoShiScreen user={user} startTopic={laoShiStartTopic} onBack={() => { setLaoShiOpen(false); setLaoShiStartTopic(null); }} />;
 
   return (
     <Screen>
-      <div className="flex items-center justify-between px-5 py-4 sticky top-0 z-10" style={{ background: WHITE, borderBottom: `1px solid ${RED_BORDER}` }}>
-        <div>
-          <h1 className="text-lg font-bold" style={{ color: RED }}>你好 Ni Hao</h1>
-          <p className="text-xs" style={{ color: MUTED }}>Welcome, {user.displayName || user.username}</p>
+      <div className="flex items-center justify-between px-5 py-4 sticky top-0 z-10" style={{ background: PAPER, borderBottom: `1.5px solid ${BORDER}` }}>
+        <div className="flex items-center gap-2.5">
+          <SealStamp size={34} rotate={-6} />
+          <div>
+            <h1 className="text-base font-bold" style={{ color: RED }}>Ni Hao</h1>
+            <p className="text-xs" style={{ color: MUTED }}>Welcome, {user.displayName || user.username}</p>
+          </div>
         </div>
-        <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center" style={{ background: RED_LIGHT }}>
+        <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center" style={{ background: WHITE, border: `1.5px solid ${BORDER}` }}>
           {user.avatar ? <img src={user.avatar} alt="" className="w-full h-full object-cover" /> : <span>🙂</span>}
         </div>
       </div>
 
-      {tab === "feed" && <FeedScreen user={user} onEnterLaoShi={() => setLaoShiOpen(true)} />}
+      {tab === "home" && <HomeScreen user={user} onEnterLaoShi={() => openLaoShi(null)} onStartTopic={(t) => openLaoShi(t)} onGoCommunity={() => setTab("feed")} />}
+      {tab === "feed" && <FeedScreen user={user} onEnterLaoShi={() => openLaoShi(null)} />}
       {tab === "settings" && <SettingsScreen user={user} onUpdateUser={handleUpdateUser} onLogout={handleLogout} onDeleteAccount={handleDeleteAccount} />}
 
-      <div className="flex items-center justify-around py-3 sticky bottom-0" style={{ background: WHITE, borderTop: `1px solid ${RED_BORDER}` }}>
-        <button onClick={() => setTab("feed")} className="flex flex-col items-center gap-0.5">
-          <span style={{ color: tab === "feed" ? RED : MUTED }}>🏠</span>
-          <span className="text-[10px]" style={{ color: tab === "feed" ? RED : MUTED }}>Feed</span>
+      <div className="flex items-center justify-around py-3 sticky bottom-0" style={{ background: PAPER, borderTop: `1.5px solid ${BORDER}` }}>
+        <button onClick={() => setTab("home")} className="press-fx flex flex-col items-center gap-0.5">
+          <span style={{ color: tab === "home" ? RED : MUTED }}>🏠</span>
+          <span className="text-[10px] font-semibold" style={{ color: tab === "home" ? RED : MUTED }}>Home</span>
+          {tab === "home" && <div style={{ width: 16, height: 2.5, borderRadius: 2, background: RED }} />}
         </button>
-        <button onClick={() => setLaoShiOpen(true)} className="flex flex-col items-center gap-0.5 -mt-6">
-          <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 100%)`, boxShadow: "0 4px 14px rgba(178,58,46,0.4)" }}>
-            <span className="text-2xl">先</span>
-          </div>
+        <button onClick={() => setTab("feed")} className="press-fx flex flex-col items-center gap-0.5">
+          <span style={{ color: tab === "feed" ? RED : MUTED }}>👥</span>
+          <span className="text-[10px] font-semibold" style={{ color: tab === "feed" ? RED : MUTED }}>Community</span>
+          {tab === "feed" && <div style={{ width: 16, height: 2.5, borderRadius: 2, background: RED }} />}
         </button>
-        <button onClick={() => setTab("settings")} className="flex flex-col items-center gap-0.5">
+        <button onClick={() => openLaoShi(null)} className="press-fx flex flex-col items-center gap-0.5 -mt-6">
+          <SealStamp size={56} rotate={0} char="先" />
+        </button>
+        <button onClick={() => setTab("settings")} className="press-fx flex flex-col items-center gap-0.5">
           <span style={{ color: tab === "settings" ? RED : MUTED }}>⚙️</span>
-          <span className="text-[10px]" style={{ color: tab === "settings" ? RED : MUTED }}>Settings</span>
+          <span className="text-[10px] font-semibold" style={{ color: tab === "settings" ? RED : MUTED }}>Settings</span>
+          {tab === "settings" && <div style={{ width: 16, height: 2.5, borderRadius: 2, background: RED }} />}
         </button>
       </div>
     </Screen>
