@@ -548,6 +548,10 @@ function getSpeechRecognizer() {
 function LaoShiScreen({ user, onBack, startTopic }) {
   const [messages, setMessages] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [conversationId, setConversationId] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
   const startTopicSentRef = useRef(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -562,28 +566,76 @@ function LaoShiScreen({ user, onBack, startTopic }) {
   const remaining = Math.max(0, DAILY_CHAT_LIMIT_SECONDS - secondsUsedToday);
   const limitReached = remaining <= 0;
 
+  function greetingText() {
+    const name = user.displayName || user.username;
+    return `你好 ${name}！I'm Lao Shi, your Chinese teacher. Ready to learn something new today? 😊`;
+  }
+
   useEffect(() => {
     if (!getSpeechRecognizer()) setVoiceSupported(false);
     const stored = localStorage.getItem(`laoshi_usage_${today}_${user.id}`);
     if (stored) setSecondsUsedToday(parseInt(stored, 10) || 0);
-    loadHistory();
+    resumeOrCreateConversation();
     return () => { stopSpeaking(); };
   }, []);
 
-  async function loadHistory() {
-    const { data } = await supabase.from("chat_messages").select("sender, text, created_at").eq("user_id", user.id).order("created_at", { ascending: true });
+  // On open: continue the most recent conversation if one exists, else start a fresh one
+  async function resumeOrCreateConversation() {
+    const { data } = await supabase.from("conversations").select("id").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(1);
     if (data && data.length) {
-      setMessages(data.map(r => ({ from: r.sender, text: r.text })));
+      await openConversation(data[0].id);
     } else {
-      const name = user.displayName || user.username;
-      const greeting = `你好 ${name}！I'm Lao Shi, your Chinese teacher. Ready to learn something new today? 😊`;
-      setMessages([{ from: "laoshi", text: greeting }]);
-      await supabase.from("chat_messages").insert({ user_id: user.id, sender: "laoshi", text: greeting });
+      await createConversation(true);
     }
+  }
+
+  async function createConversation(isInitial) {
+    setLoadingHistory(true);
+    const { data: convo } = await supabase.from("conversations").insert({ user_id: user.id, title: null }).select().single();
+    if (!convo) { setLoadingHistory(false); return; }
+    setConversationId(convo.id);
+    const greeting = greetingText();
+    setMessages([{ from: "laoshi", text: greeting }]);
+    await supabase.from("chat_messages").insert({ user_id: user.id, conversation_id: convo.id, sender: "laoshi", text: greeting });
     setLoadingHistory(false);
+    setShowHistory(false);
+    if (isInitial && startTopic && !startTopicSentRef.current) {
+      startTopicSentRef.current = true;
+      sendText(startTopic, convo.id);
+    }
+  }
+
+  async function openConversation(id) {
+    setLoadingHistory(true);
+    setConversationId(id);
+    const { data } = await supabase.from("chat_messages").select("sender, text, created_at").eq("conversation_id", id).order("created_at", { ascending: true });
+    setMessages((data || []).map(r => ({ from: r.sender, text: r.text })));
+    setLoadingHistory(false);
+    setShowHistory(false);
     if (startTopic && !startTopicSentRef.current) {
       startTopicSentRef.current = true;
-      sendText(startTopic);
+      sendText(startTopic, id);
+    }
+  }
+
+  async function openHistoryPanel() {
+    setLoadingConversations(true);
+    setShowHistory(true);
+    const { data } = await supabase.from("conversations").select("id, title, updated_at").eq("user_id", user.id).order("updated_at", { ascending: false });
+    setConversations(data || []);
+    setLoadingConversations(false);
+  }
+
+  async function deleteConversation(id, e) {
+    e.stopPropagation();
+    if (!confirm("Delete this conversation? This can't be undone.")) return;
+    await supabase.from("conversations").delete().eq("id", id);
+    setConversations(list => list.filter(c => c.id !== id));
+    if (id === conversationId) {
+      // If we just deleted the active conversation, fall back to another or start fresh
+      const remaining = conversations.filter(c => c.id !== id);
+      if (remaining.length) await openConversation(remaining[0].id);
+      else await createConversation(false);
     }
   }
 
@@ -611,14 +663,21 @@ function LaoShiScreen({ user, onBack, startTopic }) {
     speakZh(text, () => setSpeakingIndex(index), () => setSpeakingIndex(null));
   }
 
-  async function sendText(text) {
-    if (!text.trim() || sending || limitReached) return;
+  async function sendText(text, convIdOverride) {
+    const convId = convIdOverride || conversationId;
+    if (!text.trim() || sending || limitReached || !convId) return;
     const outgoingHistory = messages;
+    const isFirstUserMessage = !outgoingHistory.some(m => m.from === "user");
     setMessages(m => [...m, { from: "user", text }]);
     setInput("");
     setSending(true);
     startTimer();
-    supabase.from("chat_messages").insert({ user_id: user.id, sender: "user", text }); // fire and forget
+    supabase.from("chat_messages").insert({ user_id: user.id, conversation_id: convId, sender: "user", text }); // fire and forget
+    if (isFirstUserMessage) {
+      supabase.from("conversations").update({ title: text.slice(0, 60), updated_at: new Date().toISOString() }).eq("id", convId);
+    } else {
+      supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+    }
     try {
       const res = await fetch("/api/laoshi", {
         method: "POST",
@@ -628,7 +687,7 @@ function LaoShiScreen({ user, onBack, startTopic }) {
       const data = await res.json();
       const replyText = (res.ok && data.reply) ? data.reply : ((data && data.error) || "Lao Shi is resting right now — try again shortly.");
       setMessages(m => [...m, { from: "laoshi", text: replyText }]);
-      supabase.from("chat_messages").insert({ user_id: user.id, sender: "laoshi", text: replyText });
+      supabase.from("chat_messages").insert({ user_id: user.id, conversation_id: convId, sender: "laoshi", text: replyText });
     } catch (e) {
       const errText = "Couldn't reach the classroom — check your connection.";
       setMessages(m => [...m, { from: "laoshi", text: errText }]);
@@ -647,7 +706,39 @@ function LaoShiScreen({ user, onBack, startTopic }) {
           <div className="text-sm font-bold">Lao Shi</div>
           <div className="text-xs" style={{ color: MUTED }}>{limitReached ? "Resting for today" : `${Math.ceil(remaining / 60)} min left today`}</div>
         </div>
+        <button onClick={() => createConversation(false)} className="press-fx w-8 h-8 rounded-full flex items-center justify-center" style={{ background: PAPER, border: `1.5px solid ${BORDER}` }} title="New chat">
+          <span style={{ fontSize: 14 }}>✚</span>
+        </button>
+        <button onClick={openHistoryPanel} className="press-fx w-8 h-8 rounded-full flex items-center justify-center" style={{ background: PAPER, border: `1.5px solid ${BORDER}` }} title="History">
+          <span style={{ fontSize: 14 }}>📜</span>
+        </button>
       </div>
+
+      {showHistory && (
+        <div className="absolute inset-0 z-20 flex flex-col" style={{ background: PAPER }}>
+          <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: `1.5px solid ${BORDER}` }}>
+            <button onClick={() => setShowHistory(false)} className="text-sm" style={{ color: RED }}>← Back</button>
+            <h2 className="text-sm font-bold flex-1">Chat History</h2>
+            <button onClick={() => createConversation(false)} className="press-fx px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: RED, color: WHITE }}>+ New</button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
+            {loadingConversations && <p className="text-sm text-center py-8" style={{ color: MUTED }}>Loading…</p>}
+            {!loadingConversations && conversations.length === 0 && <p className="text-sm text-center py-8" style={{ color: MUTED }}>No past conversations yet.</p>}
+            {conversations.map(c => (
+              <button key={c.id} onClick={() => openConversation(c.id)} className="press-fx w-full flex items-center gap-2 p-3.5 rounded-2xl text-left"
+                style={{ background: c.id === conversationId ? "#FBE4E1" : WHITE, border: `1.5px solid ${c.id === conversationId ? RED : BORDER}` }}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{c.title || "New conversation"}</div>
+                  <div className="text-xs" style={{ color: MUTED }}>{new Date(c.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
+                </div>
+                <button onClick={(e) => deleteConversation(c.id, e)} className="press-fx w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FDEAEA" }}>
+                  <span style={{ fontSize: 12 }}>🗑️</span>
+                </button>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
         {loadingHistory && <p className="text-sm text-center py-8" style={{ color: MUTED }}>Loading your lessons…</p>}
