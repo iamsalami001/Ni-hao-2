@@ -194,7 +194,8 @@ function HomeScreen({ user, onEnterLaoShi, onStartTopic, onGoCommunity }) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("posts").select("text, created_at, profiles(username, display_name)").order("created_at", { ascending: false }).limit(3);
+      const { data, error } = await supabase.from("posts").select("text, created_at, profiles(username, display_name)").order("created_at", { ascending: false }).limit(3);
+      if (error) console.error("Home highlights error:", error);
       setHighlights(data || []);
       setLoadingHighlights(false);
     })();
@@ -259,8 +260,10 @@ function FeedScreen({ user, onEnterLaoShi }) {
 
   async function loadPosts() {
     setLoading(true);
-    const { data: postRows } = await supabase.from("posts").select("id, text, likes_count, created_at, author_id, profiles(username, display_name)").order("created_at", { ascending: false }).limit(50);
-    const { data: myLikes } = await supabase.from("likes").select("post_id").eq("user_id", user.id);
+    const { data: postRows, error: postsErr } = await supabase.from("posts").select("id, text, likes_count, created_at, author_id, profiles(username, display_name)").order("created_at", { ascending: false }).limit(50);
+    if (postsErr) { console.error("loadPosts posts error:", postsErr); alert("Couldn't load posts: " + postsErr.message); }
+    const { data: myLikes, error: likesErr } = await supabase.from("likes").select("post_id").eq("user_id", user.id);
+    if (likesErr) console.error("loadPosts likes error:", likesErr);
     const likedSet = new Set((myLikes || []).map(l => l.post_id));
     setPosts((postRows || []).map(p => ({
       id: p.id, text: p.text, likes: p.likes_count, createdAt: p.created_at,
@@ -277,7 +280,8 @@ function FeedScreen({ user, onEnterLaoShi }) {
     if (!text) return;
     setDraft("");
     const { error } = await supabase.from("posts").insert({ author_id: user.id, text });
-    if (!error) loadPosts();
+    if (!error) { loadPosts(); }
+    else { setDraft(text); alert("Couldn't post: " + error.message); }
   }
 
   async function toggleLike(post) {
